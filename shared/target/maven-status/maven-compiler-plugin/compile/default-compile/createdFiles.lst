@@ -1,0 +1,11 @@
+com/neo/shared/service/impl/UmHybridUserRoleImpl.class
+com/neo/shared/service/UmHybridUserRoleService.class
+com/neo/shared/handler/CustomAuthSuccessHandler.class
+com/neo/shared/entity/UmHybridUserRoleEntity.class
+com/neo/shared/dao/UserRoleDao.class
+com/neo/shared/controller/UserController.class
+com/neo/shared/model/UserRoleModel.class
+com/neo/shared/repository/UserRoleRepository.class
+com/neo/shared/dao/impl/UserRoleDaoImpl.class
+com/neo/shared/config/SecurityConfig.class
+com/neo/shared/SharedApplication.class
