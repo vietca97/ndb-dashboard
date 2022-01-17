@@ -1,42 +1,252 @@
 package com.neo.identity.utils;
 
+import com.neo.identity.constant.IdentityTagName;
+import com.neo.identity.dto.PolicyMapper;
+import com.neo.identity.dto.ServiceProvider;
 import com.sun.net.ssl.SSLContext;
+import jdk.internal.org.xml.sax.InputSource;
 import org.json.JSONObject;
 import org.json.XML;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
+import java.security.Policy;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
+@Component
 public class ConvertFromXmlToJson {
 
     public static final int IDENTITY_FACTORY = 4;
     static SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
     public static int time_out = 3 * 60 * 1000;
     @Value("${url.policy}")
-    private String urlSoap = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
+    private String urlAllPolicys = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
 
     public  String convert(String xml){
         JSONObject jsonObject = XML.toJSONObject(xml);
         String obj = jsonObject.toString(IDENTITY_FACTORY);
-        return obj;
+        return "obj";
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         ConvertFromXmlToJson c = new ConvertFromXmlToJson();
-        String result = c.callSoapPolicyDetails("TB5");
-        System.out.println(result);
+        String xml = "";
+        System.out.println("Start: " + System.nanoTime()/1000000000 );
+        String serviceName = "";
+        List<String> listRolesByUsername = c.getListRolesByUsername("administrator");
+        List<String> policyMapperList = c.getListPolicys();
+        List<ServiceProvider> lstResult = new ArrayList<>();
+        List<String> lstSP = c.getAllServiceProvider();
+
+        for (String  policy : policyMapperList){
+        //for(int i = 0 ; i < 1 ; i++){
+            List<PolicyMapper> mappers = c.getPolicyDetails(policy);
+            for(PolicyMapper mapper : mappers){
+                for (String s : listRolesByUsername){
+                    if(s.equals(mapper.getAttributeValue())){
+                        serviceName = mappers.get(0).getAttributeValue();
+                        for (String sp : lstSP){
+                            if(sp.equals(serviceName)){
+                                String url = "";
+                                String name = "";
+                                List<String> urls = c.getCallBackUrl(serviceName);
+                                if(urls != null){
+                                    url = urls.get(0);
+                                }
+//                                List<String> names = c.getServiceProviderDetails(serviceName);
+//                                if (names != null){
+//                                    name = names.get(0);
+//                                }
+                                lstResult.add(new ServiceProvider(url, name));
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+
     }
 
+    public List<ServiceProvider> getListUrl(String username){
+        List<String> listRolesByUsername = getListRolesByUsername("administrator");
+        List<String> policyMapperList = getListPolicys();
+        List<ServiceProvider> lstResult = new ArrayList<>();
+        List<String> lstSP = getAllServiceProvider();
+
+        for (String  policy : policyMapperList){
+            List<PolicyMapper> mappers = getPolicyDetails(policy);
+            for(PolicyMapper mapper : mappers){
+                for (String s : listRolesByUsername){
+                    if(s.equals(mapper.getAttributeValue())){
+                        for (String sp : lstSP){
+                            if(sp.equals(mappers.get(0).getAttributeValue())){
+                                String url = "";
+                                String name = "";
+                                List<String> urls = getCallBackUrl(mappers.get(0).getAttributeValue());
+                                if(urls != null){
+                                    url = urls.get(0);
+                                }
+//                                List<String> names = c.getServiceProviderDetails(serviceName);
+//                                if (names != null){
+//                                    name = names.get(0);
+//                                }
+                                lstResult.add(new ServiceProvider(url, name));
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+        return lstResult;
+    }
+    public List<String> getListRolesByUsername(String username){
+        String url = "https://identity.kttv.gov.vn:9443/services/RemoteUserStoreManagerService";
+        StringBuilder request = new StringBuilder();
+        request.append("<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ser=\"http://service.ws.um.carbon.wso2.org\">");
+        request.append("<soapenv:Header/><soapenv:Body>");
+        request.append("<ser:getRoleListOfUser>");
+        request.append("<ser:userName>").append(username).append("</ser:userName>");
+        request.append("</ser:getRoleListOfUser>");
+        request.append("</soapenv:Body></soapenv:Envelope>");
+        try {
+            return getFullNameFromXml(callSoapHttp(request.toString(), url), "ns:return");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private boolean checkExistsServiceProvider(List<String> lstSP, String value){
+        for(String s : lstSP){
+            if(s.equals(value)){
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public List<String> getCallBackUrl(String serviceName){
+        String url = "https://identity.kttv.gov.vn:9443/services/OAuthAdminService";
+        StringBuilder request = new StringBuilder();
+        request.append("<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">");
+        request.append("<soapenv:Header/><soapenv:Body>");
+        request.append("<xsd:getOAuthApplicationDataByAppName>");
+        request.append("<xsd:appName>").append(serviceName).append("</xsd:appName>");
+        request.append("</xsd:getOAuthApplicationDataByAppName>");
+        request.append("</soapenv:Body></soapenv:Envelope>");
+        try {
+            return getFullNameFromXml(callSoapHttp(request.toString(), url), IdentityTagName.SERVICE.CALL_BACK_URL);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public List<String> getServiceProviderDetails(String serviceName){
+        String url = "https://identity.kttv.gov.vn:9443/services/IdentityApplicationManagementService";
+        StringBuilder request = new StringBuilder();
+        request.append("<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">");
+        request.append("<soapenv:Header/><soapenv:Body>");
+        request.append("<xsd:getApplication>");
+        request.append("<xsd:applicationName>").append(serviceName).append("</xsd:applicationName>");
+        request.append("</xsd:getApplication>");
+        request.append("</soapenv:Body></soapenv:Envelope>");
+        try {
+            List<String> rs = getFullNameFromXml(callSoapHttp(request.toString(), url), IdentityTagName.SERVICE.DESCRIPTION);
+            return rs;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public List<String> getAllServiceProvider(){
+        String url = "https://identity.kttv.gov.vn:9443/services/IdentityApplicationManagementService";
+        String request = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">\n" +
+                "   <soapenv:Header/>\n" +
+                "   <soapenv:Body>\n" +
+                "      <xsd:getAllApplicationBasicInfo/>\n" +
+                "   </soapenv:Body>\n" +
+                "</soapenv:Envelope>";
+        try {
+            return getFullNameFromXml(callSoapHttp(request, url), "ax2169:applicationName");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public List<String> getListPolicys(){
+        String url = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
+        String request = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">\n" +
+                "   <soapenv:Header/>\n" +
+                "   <soapenv:Body>\n" +
+                "      <xsd:getAllPolicyIds>\n" +
+                "         <!--Optional:-->\n" +
+                "         <xsd:searchString>*</xsd:searchString>\n" +
+                "      </xsd:getAllPolicyIds>\n" +
+                "   </soapenv:Body>\n" +
+                "</soapenv:Envelope>";
+        try {
+            List<String> getAllPolicys = getFullNameFromXml(callSoapHttp(request, url), "ns:return");
+
+            return getAllPolicys;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public List<PolicyMapper> getPolicyDetails(String policyName){
+        String url = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
+        StringBuilder request = new StringBuilder();
+        request.append("<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">");
+        request.append("<soapenv:Header/><soapenv:Body>");
+        request.append("<xsd:getPolicy>");
+        request.append("<xsd:policyId>").append(policyName).append("</xsd:policyId>");
+        request.append("<xsd:isPDPPolicy>false</xsd:isPDPPolicy>");
+        request.append("</xsd:getPolicy>");
+        request.append("</soapenv:Body></soapenv:Envelope>");
+        try {
+            List<PolicyMapper> policyMapperList = new ArrayList<>();
+            String resultHttpSoap = callSoapHttp(request.toString(), url);
+            List<String> listDataType = getFullNameFromXml(resultHttpSoap, IdentityTagName.POLICY.ATTRIBUTE_DATA_TYPE);
+            List<String> listId = getFullNameFromXml(resultHttpSoap, IdentityTagName.POLICY.ATTRIBUTE_ID);
+            List<String> listValue = getFullNameFromXml(resultHttpSoap, IdentityTagName.POLICY.ATTRIBUTE_VALUE);
+            List<String> listCategory = getFullNameFromXml(resultHttpSoap, IdentityTagName.POLICY.CATEGORY);
+            for (int j = 0 ; j < listDataType.size() ; j++){
+                PolicyMapper policyMapper = new PolicyMapper();
+                policyMapper.setAttributeDataType(listDataType.get(j));
+                policyMapper.setAttributeId(listId.get(j));
+                policyMapper.setAttributeValue(listValue.get(j));
+                policyMapper.setCategory(listCategory.get(j));
+                policyMapperList.add(policyMapper);
+            }
+            return policyMapperList;
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("ERROR: " + e.getMessage());
+            return null;
+        }
+    }
     public String callSoapHttp(String xml, String url_api) {
-        System.setProperty("https.protocols", "TLSv1,TLSv1.1,TLSv1.2");
         String v = "";
         StringBuilder response = new StringBuilder();
         Date d = new Date();
@@ -88,17 +298,9 @@ public class ConvertFromXmlToJson {
         return v;
     }
 
-    public String callSoapPolicyDetails(String appName) {
-        StringBuilder str_soap = new StringBuilder();
-        str_soap.append("<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">");
-        str_soap.append("<soapenv:Header/><soapenv:Body>");
-        str_soap.append("<xsd:getOAuthApplicationDataByAppName");
-        str_soap.append("<xsd:appName>").append(appName).append("</xsd:appName>");
-        str_soap.append("</xsd:getOAuthApplicationDataByAppName>");
-        str_soap.append("</xsd::getOAuthApplicationDataByAppName></soapenv:Body></soapenv:Envelope>");
-
+    public String callSoapIdentityWSO2(String request) {
         try {
-            String resp = callSoapHttp(str_soap.toString(), urlSoap);
+            String resp = callSoapHttp(request, urlAllPolicys);
             if (resp != null) {
                 String value = getValueResult(resp);
                 resp = parserXmlFormat(value);
@@ -153,5 +355,36 @@ public class ConvertFromXmlToJson {
             v = xml;
         }
         return v;
+    }
+
+    public  Document loadXMLString(String response)
+    {
+        DocumentBuilderFactory dbf =DocumentBuilderFactory.newInstance();
+        DocumentBuilder db = null;
+        try {
+            db = dbf.newDocumentBuilder();
+        } catch (ParserConfigurationException e) {
+            e.printStackTrace();
+        }
+        Document doc = null;
+        try {
+            doc = db.parse(new org.xml.sax.InputSource(new StringReader(response)));
+        } catch (SAXException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return doc;
+    }
+
+    public List<String> getFullNameFromXml(String response, String tagName) throws Exception {
+        Document xmlDoc = loadXMLString(response);
+        NodeList nodeList = xmlDoc.getElementsByTagName(tagName);
+        List<String> ids = new ArrayList<>(nodeList.getLength());
+        for(int i = 0 ; i < nodeList.getLength() ; i++) {
+            Node x = nodeList.item(i);
+            ids.add(x.getFirstChild().getNodeValue());
+        }
+        return ids;
     }
 }
