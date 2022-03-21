@@ -3,12 +3,14 @@ package com.neo.identity.utils;
 import com.neo.identity.constant.IdentityTagName;
 import com.neo.identity.dto.PolicyMapper;
 import com.neo.identity.dto.ServiceProvider;
-import com.sun.net.ssl.SSLContext;
-import jdk.internal.org.xml.sax.InputSource;
 import org.json.JSONObject;
-import org.json.XML;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -37,11 +39,8 @@ public class ConvertFromXmlToJson {
     @Value("${url.policy}")
     private String urlAllPolicys = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
 
-    public  String convert(String xml){
-        JSONObject jsonObject = XML.toJSONObject(xml);
-        String obj = jsonObject.toString(IDENTITY_FACTORY);
-        return "obj";
-    }
+    @Autowired
+    private RestTemplate restTemplate;
 
     public static void main(String[] args) throws Exception {
         ConvertFromXmlToJson c = new ConvertFromXmlToJson();
@@ -73,6 +72,7 @@ public class ConvertFromXmlToJson {
 //                                    name = names.get(0);
 //                                }
                                 lstResult.add(new ServiceProvider(url, name));
+                                break;
                             }
                         }
                     }
@@ -82,14 +82,15 @@ public class ConvertFromXmlToJson {
         }
 
     }
+    // List<PolicyMapper> mappers = getPolicyDetails("authn_role_based_policy_template");
+    static List<String> policyMapperList = getListPolicys();
+    static List<ServiceProvider> lstResult = new ArrayList<>();
+    static List<String> lstSP = getAllServiceProvider();
 
     public List<ServiceProvider> getListUrl(String username){
         List<String> listRolesByUsername = getListRolesByUsername("administrator");
-        List<String> policyMapperList = getListPolicys();
-        List<ServiceProvider> lstResult = new ArrayList<>();
-        List<String> lstSP = getAllServiceProvider();
-
         for (String  policy : policyMapperList){
+            callRestTemplate(policy);
             List<PolicyMapper> mappers = getPolicyDetails(policy);
             for(PolicyMapper mapper : mappers){
                 for (String s : listRolesByUsername){
@@ -102,11 +103,8 @@ public class ConvertFromXmlToJson {
                                 if(urls != null){
                                     url = urls.get(0);
                                 }
-//                                List<String> names = c.getServiceProviderDetails(serviceName);
-//                                if (names != null){
-//                                    name = names.get(0);
-//                                }
                                 lstResult.add(new ServiceProvider(url, name));
+
                             }
                         }
                     }
@@ -115,6 +113,36 @@ public class ConvertFromXmlToJson {
 
         }
         return lstResult;
+    }
+
+    public String callRestTemplate(String policyName){
+        String createPersonUrl = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
+        HttpHeaders headers = new HttpHeaders();
+        //headers.setContentType(MediaType.APPLICATION_XML);
+        headers.set("SOAPAction", "urn:getPolicy");
+        headers.set("Authorization", "Basic YWRtaW46MTIzNDU2YUFA");
+        headers.set("Content-Type", "text/xml;charset=UTF-8");
+
+//        JSONObject personJsonObject = new JSONObject();
+//        personJsonObject.put("id", 1);
+//        personJsonObject.put("name", "John");
+        String body = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">\n" +
+                "   <soapenv:Header/>\n" +
+                "   <soapenv:Body>\n" +
+                "      <xsd:getPolicy>\n" +
+                "         <!--Optional:-->\n" +
+                "         <xsd:policyId>authn_role_based_policy_template</xsd:policyId>\n" +
+                "         <!--Optional:-->\n" +
+                "         <xsd:isPDPPolicy>false</xsd:isPDPPolicy>\n" +
+                "      </xsd:getPolicy>\n" +
+                "   </soapenv:Body>\n" +
+                "</soapenv:Envelope>";
+        HttpEntity<String> request =
+                new HttpEntity<String>(body, headers);
+        String personResultAsJsonStr =
+                restTemplate.postForObject(createPersonUrl, request, String.class);
+        return personResultAsJsonStr;
+
     }
     public List<String> getListRolesByUsername(String username){
         String url = "https://identity.kttv.gov.vn:9443/services/RemoteUserStoreManagerService";
@@ -177,7 +205,7 @@ public class ConvertFromXmlToJson {
         }
     }
 
-    public List<String> getAllServiceProvider(){
+    public static List<String> getAllServiceProvider(){
         String url = "https://identity.kttv.gov.vn:9443/services/IdentityApplicationManagementService";
         String request = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">\n" +
                 "   <soapenv:Header/>\n" +
@@ -193,7 +221,7 @@ public class ConvertFromXmlToJson {
         }
     }
 
-    public List<String> getListPolicys(){
+    public static List<String> getListPolicys(){
         String url = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
         String request = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">\n" +
                 "   <soapenv:Header/>\n" +
@@ -214,7 +242,7 @@ public class ConvertFromXmlToJson {
         }
     }
 
-    public List<PolicyMapper> getPolicyDetails(String policyName){
+    public static List<PolicyMapper> getPolicyDetails(String policyName){
         String url = "https://identity.kttv.gov.vn:9443/services/EntitlementPolicyAdminService";
         StringBuilder request = new StringBuilder();
         request.append("<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsd=\"http://org.apache.axis2/xsd\">");
@@ -246,7 +274,7 @@ public class ConvertFromXmlToJson {
             return null;
         }
     }
-    public String callSoapHttp(String xml, String url_api) {
+    public static String callSoapHttp(String xml, String url_api) {
         String v = "";
         StringBuilder response = new StringBuilder();
         Date d = new Date();
@@ -357,7 +385,7 @@ public class ConvertFromXmlToJson {
         return v;
     }
 
-    public  Document loadXMLString(String response)
+    public  static Document loadXMLString(String response)
     {
         DocumentBuilderFactory dbf =DocumentBuilderFactory.newInstance();
         DocumentBuilder db = null;
@@ -377,7 +405,7 @@ public class ConvertFromXmlToJson {
         return doc;
     }
 
-    public List<String> getFullNameFromXml(String response, String tagName) throws Exception {
+    public static List<String> getFullNameFromXml(String response, String tagName) throws Exception {
         Document xmlDoc = loadXMLString(response);
         NodeList nodeList = xmlDoc.getElementsByTagName(tagName);
         List<String> ids = new ArrayList<>(nodeList.getLength());
